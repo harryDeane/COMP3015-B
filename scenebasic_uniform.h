@@ -18,6 +18,10 @@
 #include "helper/skybox.h"
 #include "KeyboardController.h"
 
+#include "helper/random.h"
+#include "helper/grid.h"
+#include "helper/particleutils.h"
+
 class SceneBasic_Uniform : public Scene
 {
 private:
@@ -32,6 +36,11 @@ private:
     float tPrev;
     float angle;
     float time;
+    float particleLifeTime;
+
+    GLuint asteroidColorTex;
+    GLuint asteroidNormalTex;
+    GLuint cityTexture;
 
     float meteorYPosition; // Track meteor's Y position
     float fallSpeed;     // Falling speed
@@ -52,7 +61,7 @@ private:
     };
 
     std::vector<FallingMeteor> meteors;
-    const int NUM_METEORS = 5;          // Number of ogres to spawn
+    const int NUM_METEORS = 5;          // Number of meterors to spawn
     const float SPAWN_HEIGHT = 40.0f; // Highest spawn point (Y coordinate)
     const float GROUND_LEVEL = -30.0f; // Where they stop falling
 
@@ -60,17 +69,25 @@ private:
     float explosionDuration = 2.0f; // How long explosions last
 
    // GLuint vaoHandle; 
-    GLSLProgram  explosionProg, skyProg, modelProg;
+    GLSLProgram  explosionProg, skyProg, modelProg, prog;
+    Random rand;
+    GLuint initVel, startTime, particles, nParticles;
+    Grid grid;
+    glm::vec3 emitterPos, emitterDir;
 
    // glm::mat4 rotationMatrix;
 
     //Torus torus;
     void setMatrices(GLSLProgram &p);
-
+    void printShaderUniforms(GLSLProgram& p);
     void compile();
 
     void spawnNewMeteor(); // New function to spawn ogres
     void checkMeteorClick(); // Check for meteor clicks
+
+    void initBuffers();
+    float randFloat();
+    void renderMeteors();
 
     // Static callback functions
     static void mouseCallback(GLFWwindow* window, double xpos, double ypos);
@@ -82,9 +99,8 @@ public:
     void initScene();
     void update( float t );
     void render();
+    
     void resize(int, int);
-
-   
 };
 
 #endif // SCENEBASIC_UNIFORM_H

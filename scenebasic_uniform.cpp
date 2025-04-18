@@ -23,7 +23,7 @@ using std::endl;
 #include <glm/gtx/intersect.hpp>
 
 SceneBasic_Uniform::SceneBasic_Uniform() :
-      tPrev(0), angle(90.0f), rotSpeed(0.0f), sky(100.0f), time(0.01f), plane(50.0f,50.0f,50.0f, 50.0f), meteorYPosition(15.0f), fallSpeed(3.0f){
+      tPrev(0), angle(90.0f), rotSpeed(0.0f), sky(100.0f), time(0.01f), plane(50.0f,50.0f,50.0f, 50.0f), meteorYPosition(15.0f), fallSpeed(3.0f), particleLifeTime(10.5f), nParticles(1000), emitterPos(1,0,0),emitterDir(-1,2,0){
       meteor = ObjMesh::load("media/rocknew.obj", false, true);
       city = ObjMesh::load("media/smallcity.obj", false, true);
 
@@ -104,14 +104,20 @@ void SceneBasic_Uniform::initScene()
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
 
     compile();
+    
+
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    //glDepthMask(GL_FALSE);
+    glDisable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
+
+   
+
     projection = mat4(1.0f);
 
-    modelProg.use();
-    modelProg.setUniform("Fog.Color", vec3(0.5f, 0.5f, 0.5f)); // Gray fog color
-    modelProg.setUniform("Fog.MinDist", 30.0f); // Fog starts at 10 units
-    modelProg.setUniform("Fog.MaxDist", 100.0f); // Fog fully covers at 50 units
-
+    skyProg.use();
     GLuint cubeTex = Texture::loadHdrCubeMap("media/texture/cube/pisa-hdr/sky");
     
 
@@ -120,28 +126,59 @@ void SceneBasic_Uniform::initScene()
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_CUBE_MAP, cubeTex);
 
+    angle = glm::half_pi<float>();
+
+    modelProg.use();
+    modelProg.setUniform("Fog.Color", vec3(0.5f, 0.5f, 0.5f)); // Gray fog color
+    modelProg.setUniform("Fog.MinDist", 30.0f); // Fog starts at 10 units
+    modelProg.setUniform("Fog.MaxDist", 100.0f); // Fog fully covers at 50 units
+    
     // Load textures
     GLuint mossTexture = Texture::loadTexture("media/texture/asteroidcolor.png");
     GLuint brickTexture = Texture::loadTexture("media/texture/asteroidnorm.png");
+
+    asteroidColorTex = mossTexture;
+    asteroidNormalTex = brickTexture;
 
     // Bind textures to texture units
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, mossTexture);
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, brickTexture);
- 
+    
 
+   
     // Load textures
     GLuint cityTexture = Texture::loadTexture("media/texture/smallcity.png");
+    this->cityTexture = cityTexture;
 
     // Bind textures to texture units
-    glActiveTexture(GL_TEXTURE3);
+    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, cityTexture);
+
+    initBuffers();
+    prog.use();
+    GLint texLoc = glGetUniformLocation(prog.getHandle(), "ParticleTex");
+    if (texLoc != -1) {
+        glUniform1i(texLoc, 0);  // Bind to texture unit 0
+    }
+    else {
+        std::cerr << "Warning: ParticleTex uniform not found" << std::endl;
+    }
+    GLuint fireTexture = Texture::loadTexture("media/texture/fire.png");
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, fireTexture);
+    prog.setUniform("ParticleTex", 0);
+    prog.setUniform("ParticleLifeTime", particleLifeTime);
+    prog.setUniform("ParticleSize", 1.5f);
+    prog.setUniform("Gravity", vec3(0.0f, -0.2f, 0.0f));
+    prog.setUniform("EmitterPos", emitterPos);
 
     cameraPos = glm::vec3(0.0f, 2.0f, 5.0f);  // Start slightly above the ground
     cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);  // Looking forward
     cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
+    renderMeteors();
 }
 
 void SceneBasic_Uniform::compile()
@@ -155,9 +192,16 @@ void SceneBasic_Uniform::compile()
         explosionProg.compileShader("shader/explosion.vert");
         explosionProg.compileShader("shader/explosion.geom");
         explosionProg.compileShader("shader/explosion.frag");
+        prog.compileShader("shader/particles.vert");
+        prog.compileShader("shader/particles.frag");
         modelProg.link();
+        printShaderUniforms(modelProg);
         skyProg.link();
+        printShaderUniforms(skyProg);
         explosionProg.link();
+        printShaderUniforms(explosionProg);
+        prog.link();
+        printShaderUniforms(prog);
         
 	} catch (GLSLProgramException &e) {
 		cerr << e.what() << endl;
@@ -167,6 +211,8 @@ void SceneBasic_Uniform::compile()
 
 void SceneBasic_Uniform::update(float t)
 {
+    time = t;
+    angle = std::fmod(angle+0.01f,glm::two_pi<float>());
     float deltaT = t - tPrev;
     if (tPrev == 0.0f) deltaT = 0.0f;
     tPrev = t;
@@ -217,6 +263,9 @@ void SceneBasic_Uniform::update(float t)
 
 void SceneBasic_Uniform::render()
 {
+    prog.setUniform("Time", time);
+
+
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     vec3 cameraPos = vec3(7.0f*cos(angle), 2.0f, 7.0f*sin(angle));
@@ -225,19 +274,50 @@ void SceneBasic_Uniform::render()
     setMatrices(skyProg);
     sky.render();
 
+    // Render particles
+    prog.use();
+
+    // Set required uniforms
+    prog.setUniform("Time", time);
+    prog.setUniform("ModelViewMatrix", view * model);
+    prog.setUniform("ProjectionMatrix", projection);
+    prog.setUniform("EmitterPos", emitterPos);
+
+    // Bind texture
+    GLuint fireTexture = Texture::loadTexture("media/texture/fire.png");
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, fireTexture);
+    prog.setUniform("ParticleTex", 0);
+
+    // Render with blending
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDepthMask(GL_FALSE);
+
+    glBindVertexArray(particles);
+    glDrawArraysInstanced(GL_TRIANGLES, 0, 6, nParticles);
+    glBindVertexArray(0);
+
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+
+
     modelProg.use();
     modelProg.setUniform("IsPlane", true); // Indicate that this is the plane
+
+    // Bind city texture
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, cityTexture);
     modelProg.setUniform("cityTexture", 0); // Texture unit 0
+
     model = mat4(1.0f);
-    model = glm::translate(model, vec3(0.0f, -10.0f, 0.0f)); // Position the plane underneath the model
-    model = glm::scale(model, vec3(50.0f)); 
+    model = glm::translate(model, vec3(0.0f, -10.0f, 0.0f));
+    model = glm::scale(model, vec3(50.0f));
     setMatrices(modelProg);
     city->render();
 
+
     modelProg.use();
-    modelProg.setUniform("IsPlane", false); // Indicate that this is not the plane
-    modelProg.setUniform("mossTexture", 0); // Texture unit 0
-    modelProg.setUniform("brickTexture", 1); // Texture unit 1
 
     #define MAX_LIGHTS 3
     vec3 lightPositions[MAX_LIGHTS] = {
@@ -268,8 +348,53 @@ void SceneBasic_Uniform::render()
     modelProg.setUniform("Material.Ks", vec3(0.5f)); // Specular reflectivity
     modelProg.setUniform("Material.Shininess", 32.0f); // Specular shininess
 
+    renderMeteors();
+}
+
+void SceneBasic_Uniform::renderMeteors() {
     // Render regular meteors
     modelProg.use();
+
+    modelProg.setUniform("IsPlane", false); // Indicate that this is not the plane
+
+    // Bind asteroid textures
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, asteroidColorTex);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, asteroidNormalTex);
+
+    modelProg.setUniform("ColorTex", 0); // Texture unit 0
+    modelProg.setUniform("NormalMapTex", 1); // Texture unit 1
+
+#define MAX_LIGHTS 3
+    vec3 lightPositions[MAX_LIGHTS] = {
+        vec3(0.5f, 1.0f, 0.5f),  // left backward
+        vec3(0.0f, 1.0f, 0.0f), // Slightly to the left
+        vec3(0.5f, 1.0f, -0.5f)   // Centered above
+    };
+
+    vec3 lightDirections[MAX_LIGHTS] = {
+        normalize(vec3(0.0f) - lightPositions[0]), // Point toward origin
+        normalize(vec3(0.0f) - lightPositions[1]),
+        normalize(vec3(0.0f) - lightPositions[2])
+    };
+
+    // Set light positions and directions
+    for (int i = 0; i < MAX_LIGHTS; i++) {
+        std::string lightName = "Lights[" + std::to_string(i) + "]";
+        modelProg.setUniform((lightName + ".Position").c_str(), vec4(lightPositions[i], 1.0f));
+        modelProg.setUniform((lightName + ".La").c_str(), vec3(0.1f)); // Ambient light intensity
+        modelProg.setUniform((lightName + ".L").c_str(), vec3(1.0f)); // Diffuse and specular light intensity
+        modelProg.setUniform((lightName + ".Direction").c_str(), lightDirections[i]);
+        modelProg.setUniform((lightName + ".Cutoff").c_str(), glm::radians(50.0f)); // Spotlight cutoff angle
+    }
+
+    // Set material uniforms
+    modelProg.setUniform("Material.Kd", vec3(0.8f)); // Diffuse reflectivity
+    modelProg.setUniform("Material.Ka", vec3(0.2f)); // Ambient reflectivity
+    modelProg.setUniform("Material.Ks", vec3(0.5f)); // Specular reflectivity
+    modelProg.setUniform("Material.Shininess", 32.0f); // Specular shininess
+
     for (const auto& meteorInstance : meteors) {
         model = mat4(1.0f);
         model = glm::translate(model, meteorInstance.position);
@@ -299,6 +424,7 @@ void SceneBasic_Uniform::render()
         setMatrices(explosionProg);
         meteor->render();
     }
+
 }
 
 void SceneBasic_Uniform::spawnNewMeteor() {
@@ -340,8 +466,83 @@ void SceneBasic_Uniform::setMatrices(GLSLProgram &p)
 
     p.setUniform("ModelMatrix", model);
     p.setUniform("ViewMatrix", view);
+    p.setUniform("ModelViewMatrix", mv);
     p.setUniform("ProjectionMatrix", projection);
     //prog.setUniform("NormalMatrix", glm::mat3(vec3(mv[01]), vec3(mv[1]), vec3(mv[2])));
     p.setUniform("MVP",projection* mv);
 }
 
+void SceneBasic_Uniform::initBuffers() {
+    glGenBuffers(1, &initVel);
+    glGenBuffers(1, &startTime);
+    int size = nParticles * sizeof(float);
+    glBindBuffer(GL_ARRAY_BUFFER, initVel);
+    glBufferData(GL_ARRAY_BUFFER, size * 3, 0, GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, startTime);
+    glBufferData(GL_ARRAY_BUFFER, size, 0, GL_STATIC_DRAW);
+
+    glm::mat3 emitterBasis = ParticleUtils::makeArbitraryBasis(emitterDir);
+    vec3 v(0.0f);
+    float velocity, theta, phi;
+    std::vector<GLfloat>data(nParticles * 3);
+
+    for (uint32_t i = 0; i < nParticles; i++) {
+        theta = glm::mix(0.0f, glm::pi<float>() / 20.0f, randFloat());
+        phi = glm::mix(0.0f, glm::two_pi<float>(), randFloat());
+        v.x = sinf(theta) * cosf(phi);
+        v.y = cosf(theta);
+        v.z = sinf(theta) * sinf(phi);
+        velocity = glm::mix(1.25f, 1.5f, randFloat());
+        v = normalize(emitterBasis * v) * velocity;
+        data[3 * i] = v.x;
+        data[3 * i + 1] = v.y;
+        data[3 * i + 2] = v.z;
+    }
+    glBindBuffer(GL_ARRAY_BUFFER, initVel);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, size * 3, data.data());
+    float rate = particleLifeTime / nParticles;
+    for (int i = 0; i < nParticles; i++) {
+        data[i] = rate * i;
+    }
+    glBindBuffer(GL_ARRAY_BUFFER, startTime);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, nParticles * sizeof(float), data.data());
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glGenVertexArrays(1, &particles);
+    glBindVertexArray(particles);
+
+    // Bind initVel buffer, and set vertex attribute for velocity
+    glBindBuffer(GL_ARRAY_BUFFER, initVel);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(0);
+
+    // Bind startTime buffer, and set vertex attribute for time
+    glBindBuffer(GL_ARRAY_BUFFER, startTime);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(1);
+
+    // Enable instancing
+    glVertexAttribDivisor(0, 1);
+    glVertexAttribDivisor(1, 1);
+
+    glBindVertexArray(0);  // Unbind VAO after setting everything up
+
+}
+
+float SceneBasic_Uniform::randFloat() {
+    return rand.nextFloat();
+}
+
+void SceneBasic_Uniform::printShaderUniforms(GLSLProgram &prog) {
+    GLint count;
+    glGetProgramiv(prog.getHandle(), GL_ACTIVE_UNIFORMS, &count);
+
+    printf("Active Uniforms: %d\n", count);
+
+    GLint size;
+    GLenum type;
+    GLchar name[256];
+    for (GLint i = 0; i < count; i++) {
+        glGetActiveUniform(prog.getHandle(), i, sizeof(name), NULL, &size, &type, name);
+        printf("Uniform #%d: %s (Type: %x, Size: %d)\n", i, name, type, size);
+    }
+}

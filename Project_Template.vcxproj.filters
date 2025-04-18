@@ -72,6 +72,9 @@
     <ClCompile Include="KeyboardController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="helper\grid.cpp">
+      <Filter>helper</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="shader\basic_uniform.frag">
@@ -99,6 +102,12 @@
       <Filter>shaders</Filter>
     </None>
     <None Include="shader\explosion.vert">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shader\particles.frag">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shader\particles.vert">
       <Filter>shaders</Filter>
     </None>
   </ItemGroup>
@@ -162,6 +171,15 @@
     </ClInclude>
     <ClInclude Include="KeyboardController.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="helper\grid.h">
+      <Filter>helper</Filter>
+    </ClInclude>
+    <ClInclude Include="helper\particleutils.h">
+      <Filter>helper</Filter>
+    </ClInclude>
+    <ClInclude Include="helper\random.h">
+      <Filter>helper</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
