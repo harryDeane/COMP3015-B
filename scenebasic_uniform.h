@@ -35,8 +35,9 @@ private:
    float rotSpeed;
     float tPrev;
     float angle;
-    float time;
-    float particleLifeTime;
+    float time, deltaT;
+    float particleLifetime;
+    int nParticles;
 
     GLuint asteroidColorTex;
     GLuint asteroidNormalTex;
@@ -71,13 +72,19 @@ private:
    // GLuint vaoHandle; 
     GLSLProgram  explosionProg, skyProg, modelProg, prog;
     Random rand;
-    GLuint initVel, startTime, particles, nParticles;
+    // Particle Buffer
+    GLuint posBuf[2], velBuf[2], age[2];
+    // VAO
+    GLuint particleArray[2];
+    // Transform Feedbacks
+    GLuint feedback[2];
+    GLuint drawBuf;
     Grid grid;
     glm::vec3 emitterPos, emitterDir;
 
    // glm::mat4 rotationMatrix;
 
-    //Torus torus;
+    // Torus torus;
     void setMatrices(GLSLProgram &p);
     void printShaderUniforms(GLSLProgram& p);
     void compile();

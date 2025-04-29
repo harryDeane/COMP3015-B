@@ -23,7 +23,7 @@ using std::endl;
 #include <glm/gtx/intersect.hpp>
 
 SceneBasic_Uniform::SceneBasic_Uniform() :
-      tPrev(0), angle(90.0f), rotSpeed(0.0f), sky(100.0f), time(0.01f), plane(50.0f,50.0f,50.0f, 50.0f), meteorYPosition(15.0f), fallSpeed(3.0f), particleLifeTime(10.5f), nParticles(1000), emitterPos(1,0,0),emitterDir(-1,2,0){
+      tPrev(0), angle(0.0f),drawBuf(1),deltaT(0), rotSpeed(0.0f), sky(100.0f), time(0.01f), plane(50.0f,50.0f,50.0f, 50.0f), meteorYPosition(15.0f), fallSpeed(3.0f), particleLifetime(10.5f), nParticles(1000), emitterPos(1,0,0),emitterDir(-1,2,0){
       meteor = ObjMesh::load("media/rocknew.obj", false, true);
       city = ObjMesh::load("media/smallcity.obj", false, true);
 
@@ -66,7 +66,7 @@ void SceneBasic_Uniform::checkMeteorClick() {
 
     // Check intersection with each meteor
     for (auto& meteorInstance : meteors) {
-        // Simple sphere collision (adjust radius as needed)
+        // Simple sphere collision
         float radius = 2.0f; // Meteor bounding sphere radius
 
         glm::vec3 oc = rayOrigin - meteorInstance.position;
@@ -76,12 +76,12 @@ void SceneBasic_Uniform::checkMeteorClick() {
         float discriminant = b * b - 4 * a * c;
 
         if (discriminant >= 0) {
-            // Hit! Start explosion
+            // Start explosion
             meteorInstance.exploding = true;
             meteorInstance.explosionTime = 0.0f;
             meteorInstance.explosionSpeed = 1.0f / explosionDuration;
 
-            // Move to exploding list (optional)
+            // Move to exploding list
             explodingMeteors.push_back(meteorInstance);
             meteorInstance = meteors.back();
             meteors.pop_back();
@@ -104,7 +104,6 @@ void SceneBasic_Uniform::initScene()
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
 
     compile();
-    
 
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glEnable(GL_BLEND);
@@ -156,23 +155,23 @@ void SceneBasic_Uniform::initScene()
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, cityTexture);
 
-    initBuffers();
-    prog.use();
-    GLint texLoc = glGetUniformLocation(prog.getHandle(), "ParticleTex");
-    if (texLoc != -1) {
-        glUniform1i(texLoc, 0);  // Bind to texture unit 0
-    }
-    else {
-        std::cerr << "Warning: ParticleTex uniform not found" << std::endl;
-    }
-    GLuint fireTexture = Texture::loadTexture("media/texture/fire.png");
+	model = mat4(1.0f);
     glActiveTexture(GL_TEXTURE0);
+   
+    prog.use();
+	
+    GLuint fireTexture = Texture::loadTexture("media/texture/smoke.png");
+    glActiveTexture(GL_TEXTURE1);
+    ParticleUtils::createRandomTex1D(nParticles * 3);
     glBindTexture(GL_TEXTURE_2D, fireTexture);
+    initBuffers();
+    prog.setUniform("RandomTex", 1);
     prog.setUniform("ParticleTex", 0);
-    prog.setUniform("ParticleLifeTime", particleLifeTime);
+    prog.setUniform("ParticleLifetime", particleLifetime);
     prog.setUniform("ParticleSize", 1.5f);
-    prog.setUniform("Gravity", vec3(0.0f, -0.2f, 0.0f));
+    prog.setUniform("Accel", vec3(0.0f, 0.2f, 0.0f));
     prog.setUniform("EmitterPos", emitterPos);
+	prog.setUniform("EmitterBasis", ParticleUtils::makeArbitraryBasis(emitterDir));
 
     cameraPos = glm::vec3(0.0f, 2.0f, 5.0f);  // Start slightly above the ground
     cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);  // Looking forward
@@ -194,6 +193,10 @@ void SceneBasic_Uniform::compile()
         explosionProg.compileShader("shader/explosion.frag");
         prog.compileShader("shader/particles.vert");
         prog.compileShader("shader/particles.frag");
+		GLuint progHandle = prog.getHandle();
+		const char* outputNames[] = { "Position", "Velocity", "Age" };
+		glTransformFeedbackVaryings(progHandle, 3, outputNames, GL_SEPARATE_ATTRIBS);
+
         modelProg.link();
         printShaderUniforms(modelProg);
         skyProg.link();
@@ -211,6 +214,9 @@ void SceneBasic_Uniform::compile()
 
 void SceneBasic_Uniform::update(float t)
 {
+    deltaT = t - tPrev;  // Make sure this is set before rendering
+    
+
     time = t;
     angle = std::fmod(angle+0.01f,glm::two_pi<float>());
     float deltaT = t - tPrev;
@@ -263,9 +269,6 @@ void SceneBasic_Uniform::update(float t)
 
 void SceneBasic_Uniform::render()
 {
-    prog.setUniform("Time", time);
-
-
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     vec3 cameraPos = vec3(7.0f*cos(angle), 2.0f, 7.0f*sin(angle));
@@ -276,7 +279,24 @@ void SceneBasic_Uniform::render()
 
     // Render particles
     prog.use();
+    prog.setUniform("Time", time);
+    prog.setUniform("DeltaT", deltaT);
+    prog.setUniform("Pass", 1);
 
+	glEnable(GL_RASTERIZER_DISCARD);
+	glBindTransformFeedback(GL_TRANSFORM_FEEDBACK, feedback[drawBuf]);
+	glBeginTransformFeedback(GL_POINTS);
+	glBindVertexArray(particleArray[1 - drawBuf]);
+	glVertexAttribDivisor(0, 0);
+    glVertexAttribDivisor(1, 0);
+    glVertexAttribDivisor(2, 0);
+    glDrawArrays(GL_POINTS, 0, nParticles);
+	glBindVertexArray(0);
+	glEndTransformFeedback();
+	glDisable(GL_RASTERIZER_DISCARD);
+
+    prog.setUniform("Pass", 2);
+    
     // Set required uniforms
     prog.setUniform("Time", time);
     prog.setUniform("ModelViewMatrix", view * model);
@@ -284,7 +304,7 @@ void SceneBasic_Uniform::render()
     prog.setUniform("EmitterPos", emitterPos);
 
     // Bind texture
-    GLuint fireTexture = Texture::loadTexture("media/texture/fire.png");
+    GLuint fireTexture = Texture::loadTexture("media/texture/smoke.png");
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fireTexture);
     prog.setUniform("ParticleTex", 0);
@@ -294,11 +314,15 @@ void SceneBasic_Uniform::render()
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDepthMask(GL_FALSE);
 
-    glBindVertexArray(particles);
+    glBindVertexArray(particleArray[drawBuf]);
+    glVertexAttribDivisor(0, 1);
+    glVertexAttribDivisor(1, 1);
+    glVertexAttribDivisor(2, 1);
     glDrawArraysInstanced(GL_TRIANGLES, 0, 6, nParticles);
     glBindVertexArray(0);
 
     glDepthMask(GL_TRUE);
+    drawBuf = 1 - drawBuf;
     glDisable(GL_BLEND);
 
 
@@ -473,64 +497,79 @@ void SceneBasic_Uniform::setMatrices(GLSLProgram &p)
 }
 
 void SceneBasic_Uniform::initBuffers() {
-    glGenBuffers(1, &initVel);
-    glGenBuffers(1, &startTime);
-    int size = nParticles * sizeof(float);
-    glBindBuffer(GL_ARRAY_BUFFER, initVel);
-    glBufferData(GL_ARRAY_BUFFER, size * 3, 0, GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, startTime);
-    glBufferData(GL_ARRAY_BUFFER, size, 0, GL_STATIC_DRAW);
+    glGenBuffers(2, posBuf);
+    glGenBuffers(2, velBuf);
+	glGenBuffers(2, age);
 
-    glm::mat3 emitterBasis = ParticleUtils::makeArbitraryBasis(emitterDir);
-    vec3 v(0.0f);
-    float velocity, theta, phi;
-    std::vector<GLfloat>data(nParticles * 3);
+    int size = nParticles * 3*sizeof(GLfloat);
+    glBindBuffer(GL_ARRAY_BUFFER, posBuf[0]);
+    glBufferData(GL_ARRAY_BUFFER, size, 0, GL_DYNAMIC_COPY);
+    glBindBuffer(GL_ARRAY_BUFFER, posBuf[1]);
+    glBufferData(GL_ARRAY_BUFFER, size, 0, GL_DYNAMIC_COPY);
+    glBindBuffer(GL_ARRAY_BUFFER, velBuf[0]);
+    glBufferData(GL_ARRAY_BUFFER, size, 0, GL_DYNAMIC_COPY);
+    glBindBuffer(GL_ARRAY_BUFFER, velBuf[1]);
+    glBufferData(GL_ARRAY_BUFFER, size, 0, GL_DYNAMIC_COPY);
+    glBindBuffer(GL_ARRAY_BUFFER, age[0]);
+    glBufferData(GL_ARRAY_BUFFER, nParticles * sizeof(float), 0, GL_DYNAMIC_COPY);
+    glBindBuffer(GL_ARRAY_BUFFER, age[1]);
+    glBufferData(GL_ARRAY_BUFFER, nParticles * sizeof(float), 0, GL_DYNAMIC_COPY);
 
-    for (uint32_t i = 0; i < nParticles; i++) {
-        theta = glm::mix(0.0f, glm::pi<float>() / 20.0f, randFloat());
-        phi = glm::mix(0.0f, glm::two_pi<float>(), randFloat());
-        v.x = sinf(theta) * cosf(phi);
-        v.y = cosf(theta);
-        v.z = sinf(theta) * sinf(phi);
-        velocity = glm::mix(1.25f, 1.5f, randFloat());
-        v = normalize(emitterBasis * v) * velocity;
-        data[3 * i] = v.x;
-        data[3 * i + 1] = v.y;
-        data[3 * i + 2] = v.z;
-    }
-    glBindBuffer(GL_ARRAY_BUFFER, initVel);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, size * 3, data.data());
-    float rate = particleLifeTime / nParticles;
+    std::vector<GLfloat>tempData(nParticles);
+    float rate = particleLifetime / nParticles;
     for (int i = 0; i < nParticles; i++) {
-        data[i] = rate * i;
+        tempData[i] = rate * i + nParticles;  // Start with some positive ages
     }
-    glBindBuffer(GL_ARRAY_BUFFER, startTime);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, nParticles * sizeof(float), data.data());
+    
+    glBindBuffer(GL_ARRAY_BUFFER, age[0]);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, nParticles * sizeof(float), tempData.data());
     glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glGenVertexArrays(1, &particles);
-    glBindVertexArray(particles);
-
-    // Bind initVel buffer, and set vertex attribute for velocity
-    glBindBuffer(GL_ARRAY_BUFFER, initVel);
+   
+    glGenVertexArrays(2, particleArray);
+    
+    // Particle Array 0
+    glBindVertexArray(particleArray[0]);
+    glBindBuffer(GL_ARRAY_BUFFER, posBuf[0]);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
     glEnableVertexAttribArray(0);
 
-    // Bind startTime buffer, and set vertex attribute for time
-    glBindBuffer(GL_ARRAY_BUFFER, startTime);
-    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 0, 0);
+    glBindBuffer(GL_ARRAY_BUFFER, velBuf[0]);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
     glEnableVertexAttribArray(1);
 
-    // Enable instancing
-    glVertexAttribDivisor(0, 1);
-    glVertexAttribDivisor(1, 1);
+    glBindBuffer(GL_ARRAY_BUFFER, age[0]);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(2);
+   
+    // Particle Array 1
+    glBindVertexArray(particleArray[1]);
+    glBindBuffer(GL_ARRAY_BUFFER, posBuf[1]);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(0);
 
-    glBindVertexArray(0);  // Unbind VAO after setting everything up
+    glBindBuffer(GL_ARRAY_BUFFER, velBuf[1]);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, age[1]);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(2);
+
+    glBindVertexArray(0);
+
+	glGenTransformFeedbacks(2, feedback);
+    glBindTransformFeedback(GL_TRANSFORM_FEEDBACK, feedback[0]);
+	glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, posBuf[0]);
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 1, velBuf[0]);
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 2, age[0]);
+    glBindTransformFeedback(GL_TRANSFORM_FEEDBACK, feedback[1]);
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, posBuf[1]);
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 1, velBuf[1]);
+    glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 2, age[1]);
+    glBindTransformFeedback(GL_TRANSFORM_FEEDBACK, 0);
 
 }
 
-float SceneBasic_Uniform::randFloat() {
-    return rand.nextFloat();
-}
 
 void SceneBasic_Uniform::printShaderUniforms(GLSLProgram &prog) {
     GLint count;
