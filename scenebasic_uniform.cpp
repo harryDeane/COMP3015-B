@@ -23,7 +23,7 @@ using std::endl;
 #include <glm/gtx/intersect.hpp>
 
 SceneBasic_Uniform::SceneBasic_Uniform() :
-      tPrev(0), angle(90.0f), rotSpeed(0.0f), sky(100.0f), time(0.01f), plane(50.0f,50.0f,50.0f, 50.0f), meteorYPosition(15.0f), fallSpeed(3.0f), particleLifeTime(10.5f), nParticles(1000), emitterPos(1,0,0),emitterDir(-1,2,0){
+      tPrev(0), angle(90.0f), rotSpeed(0.0f), sky(100.0f), time(0.01f), plane(50.0f,50.0f,50.0f, 50.0f), meteorYPosition(15.0f), fallSpeed(3.0f), particleLifeTime(20.0f), nParticles(1000){
       meteor = ObjMesh::load("media/rocknew.obj", false, true);
       city = ObjMesh::load("media/smallcity.obj", false, true);
 
@@ -156,6 +156,7 @@ void SceneBasic_Uniform::initScene()
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, cityTexture);
 
+
     initBuffers();
     prog.use();
     GLint texLoc = glGetUniformLocation(prog.getHandle(), "ParticleTex");
@@ -165,9 +166,11 @@ void SceneBasic_Uniform::initScene()
     else {
         std::cerr << "Warning: ParticleTex uniform not found" << std::endl;
     }
-    GLuint fireTexture = Texture::loadTexture("media/texture/fire.png");
+    GLuint fireTexture = Texture::loadTexture("media/texture/smoke.png");
+    this->fireTexture = fireTexture;
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fireTexture);
+
     prog.setUniform("ParticleTex", 0);
     prog.setUniform("ParticleLifeTime", particleLifeTime);
     prog.setUniform("ParticleSize", 1.5f);
@@ -225,18 +228,26 @@ void SceneBasic_Uniform::update(float t)
     time += deltaT;
 
     // Update all ogres
-    for (auto& meteorInstance : meteors) {
-        // Only fall if above ground
-        if (meteorInstance.position.y > GROUND_LEVEL) {
-            meteorInstance.position.y -= meteorInstance.fallSpeed * deltaT;
+    for (auto& meteor : meteors) {
+        if (meteor.position.y > GROUND_LEVEL) {
+            meteor.position.y -= meteor.fallSpeed * deltaT;
+            meteor.emitterPos = meteor.position; // Update particle emitter position
         }
         else {
-            // Respawn at top when hitting ground
-            spawnNewMeteor();
-            meteorInstance = meteors.back();
-            meteors.pop_back();
+            // Instead of respawning, recycle the meteor
+            meteor.position = glm::vec3(
+                (std::rand() % 40) - 20.0f,
+                SPAWN_HEIGHT,
+                (std::rand() % 40) - 20.0f
+            );
+            meteor.emitterPos = meteor.position;
+            meteor.rotationAngle = 0.0f;
+            meteor.fallSpeed = 3.0f + (std::rand() % 100) / 50.0f;
+
+            // Reinitialize particle system
+            initMeteorParticleSystem(meteor);
         }
-        meteorInstance.rotationAngle += deltaT * 45.0f; // Rotate 45 degrees per second
+        meteor.rotationAngle += deltaT * 45.0f;
     }
 
     // Update exploding meteors
@@ -274,30 +285,36 @@ void SceneBasic_Uniform::render()
     setMatrices(skyProg);
     sky.render();
 
-    // Render particles
+    // Render particles for each meteor
     prog.use();
-
-    // Set required uniforms
     prog.setUniform("Time", time);
-    prog.setUniform("ModelViewMatrix", view * model);
     prog.setUniform("ProjectionMatrix", projection);
-    prog.setUniform("EmitterPos", emitterPos);
+    prog.setUniform("ParticleSize", 5.0f);
 
     // Bind texture
-    GLuint fireTexture = Texture::loadTexture("media/texture/fire.png");
+    GLuint fireTexture = Texture::loadTexture("media/texture/smoke.png");
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fireTexture);
     prog.setUniform("ParticleTex", 0);
 
-    // Render with blending
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDepthMask(GL_FALSE);
 
-    glBindVertexArray(particles);
-    glDrawArraysInstanced(GL_TRIANGLES, 0, 6, nParticles);
-    glBindVertexArray(0);
+    for (const auto& meteorInstance : meteors) {
+        // Update emitter position to follow the meteor
+        prog.setUniform("EmitterPos", meteorInstance.position);
 
+        // Set ModelView matrix
+        mat4 modelView = view * glm::translate(mat4(1.0f), meteorInstance.position);
+        prog.setUniform("ModelViewMatrix", modelView);
+
+        // Draw particles for this meteor
+        glBindVertexArray(meteorInstance.particlesVAO);
+        glDrawArraysInstanced(GL_TRIANGLES, 0, 6, meteorInstance.nParticles);
+    }
+
+    glBindVertexArray(0);
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
 
@@ -430,9 +447,9 @@ void SceneBasic_Uniform::renderMeteors() {
 void SceneBasic_Uniform::spawnNewMeteor() {
     FallingMeteor newMeteor;
     newMeteor.position = glm::vec3(
-        (std::rand() % 40) - 20.0f,  // Random X between -20 and 20
+        (std::rand() % 40) - 20.0f,
         SPAWN_HEIGHT,
-        (std::rand() % 40) - 20.0f   // Random Z between -20 and 20
+        (std::rand() % 40) - 20.0f
     );
     newMeteor.rotationAxis = glm::normalize(glm::vec3(
         (std::rand() % 100) / 100.0f,
@@ -440,7 +457,16 @@ void SceneBasic_Uniform::spawnNewMeteor() {
         (std::rand() % 100) / 100.0f
     ));
     newMeteor.rotationAngle = 0.0f;
-    newMeteor.fallSpeed = 3.0f + (std::rand() % 100) / 50.0f; // Between 3-5
+    newMeteor.fallSpeed = 3.0f + (std::rand() % 100) / 50.0f;
+
+    // Initialize particle system for this meteor
+    newMeteor.emitterPos = newMeteor.position;
+    newMeteor.emitterDir = glm::vec3(0, -5, 0); // Or customize per meteor
+    newMeteor.nParticles = 500; // Fewer particles per meteor
+
+    // Initialize particle buffers for this meteor
+    initMeteorParticleSystem(newMeteor);
+
     meteors.push_back(newMeteor);
 }
 
@@ -545,4 +571,63 @@ void SceneBasic_Uniform::printShaderUniforms(GLSLProgram &prog) {
         glGetActiveUniform(prog.getHandle(), i, sizeof(name), NULL, &size, &type, name);
         printf("Uniform #%d: %s (Type: %x, Size: %d)\n", i, name, type, size);
     }
+}
+
+void SceneBasic_Uniform::initMeteorParticleSystem(FallingMeteor& meteor) {
+    // Generate buffers
+    glGenBuffers(1, &meteor.initVelBuffer);
+    glGenBuffers(1, &meteor.startTimeBuffer);
+
+    int size = meteor.nParticles * sizeof(float);
+    glBindBuffer(GL_ARRAY_BUFFER, meteor.initVelBuffer);
+    glBufferData(GL_ARRAY_BUFFER, size * 3, 0, GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, meteor.startTimeBuffer);
+    glBufferData(GL_ARRAY_BUFFER, size, 0, GL_STATIC_DRAW);
+
+    glm::mat3 emitterBasis = ParticleUtils::makeArbitraryBasis(meteor.emitterDir);
+    vec3 v(0.0f);
+    float velocity, theta, phi;
+    std::vector<GLfloat> data(meteor.nParticles * 3);
+
+    for (uint32_t i = 0; i < meteor.nParticles; i++) {
+        theta = glm::mix(0.0f, glm::pi<float>() / 20.0f, randFloat());
+        phi = glm::mix(0.0f, glm::two_pi<float>(), randFloat());
+        v.x = sinf(theta) * cosf(phi);
+        v.y = cosf(theta);
+        v.z = sinf(theta) * sinf(phi);
+        velocity = glm::mix(1.25f, 1.5f, randFloat());
+        v = normalize(emitterBasis * v) * velocity;
+        data[3 * i] = v.x;
+        data[3 * i + 1] = v.y;
+        data[3 * i + 2] = v.z;
+    }
+
+    glBindBuffer(GL_ARRAY_BUFFER, meteor.initVelBuffer);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, size * 3, data.data());
+
+    float rate = particleLifeTime / meteor.nParticles;
+    for (int i = 0; i < meteor.nParticles; i++) {
+        data[i] = rate * i;
+    }
+
+    glBindBuffer(GL_ARRAY_BUFFER, meteor.startTimeBuffer);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, meteor.nParticles * sizeof(float), data.data());
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    // Create VAO
+    glGenVertexArrays(1, &meteor.particlesVAO);
+    glBindVertexArray(meteor.particlesVAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, meteor.initVelBuffer);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(0);
+
+    glBindBuffer(GL_ARRAY_BUFFER, meteor.startTimeBuffer);
+    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(1);
+
+    glVertexAttribDivisor(0, 1);
+    glVertexAttribDivisor(1, 1);
+
+    glBindVertexArray(0);
 }
