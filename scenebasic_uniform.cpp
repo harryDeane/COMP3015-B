@@ -304,7 +304,7 @@ void SceneBasic_Uniform::render()
     prog.setUniform("EmitterPos", emitterPos);
 
     // Bind texture
-    GLuint fireTexture = Texture::loadTexture("media/texture/smoke.png");
+    GLuint fireTexture = Texture::loadTexture("media/texture/fire.png");
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fireTexture);
     prog.setUniform("ParticleTex", 0);
