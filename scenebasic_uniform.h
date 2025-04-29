@@ -32,8 +32,11 @@ private:
     SkyBox sky;
    std::unique_ptr<ObjMesh> meteor;
    std::unique_ptr<ObjMesh> city;
+   GLuint sprites;
+   int numSprites;
+   float* locations;
   
-   float rotSpeed;
+    float rotSpeed;
     float tPrev;
     float angle;
     float time, deltaT;
@@ -81,7 +84,7 @@ private:
     float explosionDuration = 2.0f; // How long explosions last
 
    // GLuint vaoHandle; 
-    GLSLProgram  explosionProg, skyProg, modelProg, prog;
+    GLSLProgram  explosionProg, skyProg, modelProg, prog, spriteProg;
     Random rand;
     // Particle Buffer
     GLuint posBuf[2], velBuf[2], age[2];
@@ -104,7 +107,7 @@ private:
     void checkMeteorClick(); // Check for meteor clicks
 
     void initBuffers();
-    float randFloat();
+
     void renderMeteors();
 
     void initMeteorParticleSystem(FallingMeteor& meteor);

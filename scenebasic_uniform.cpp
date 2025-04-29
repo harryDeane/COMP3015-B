@@ -8,7 +8,7 @@ using glm::mat3;
 
 #include <cstdio>
 #include <cstdlib>
-
+#include <ctime>
 #include <string>
 using std::string;
 
@@ -21,6 +21,7 @@ using std::endl;
 #include "helper/texture.h"
 
 #include <glm/gtx/intersect.hpp>
+
 
 SceneBasic_Uniform::SceneBasic_Uniform() :
       tPrev(0), angle(0.0f),drawBuf(1),deltaT(0), rotSpeed(0.0f), sky(100.0f), time(0.01f), plane(50.0f,50.0f,50.0f, 50.0f), meteorYPosition(15.0f), fallSpeed(3.0f), particleLifetime(10.5f), nParticles(1000), emitterPos(1,0,0),emitterDir(-1,2,0){
@@ -178,6 +179,39 @@ void SceneBasic_Uniform::initScene()
     cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
     renderMeteors();
+
+
+	spriteProg.use();
+    numSprites = 50;
+    locations = new float[numSprites*3];
+    std::srand(static_cast<unsigned>(std::time(nullptr)));
+
+    for (int i = 0; i < numSprites; i++) {
+        vec3 p(
+            ((float)std::rand() / RAND_MAX * 20.0f) - 10.0f,  // X: -10 to 10
+            -28.0f,                                             // Y: 0 (ground level)
+            ((float)std::rand() / RAND_MAX * 20.0f) - 10.0f   // Z: -10 to 10
+        );
+        locations[i * 3] = p.x;
+        locations[i * 3 + 1] = p.y;
+        locations[i * 3 + 2] = p.z;
+    }
+
+    GLuint handle;
+	glGenBuffers(1, &handle);
+	glBindBuffer(GL_ARRAY_BUFFER, handle);
+	glBufferData(GL_ARRAY_BUFFER, numSprites * 3 * sizeof(float), locations, GL_STATIC_DRAW);
+	delete[] locations;
+	glGenVertexArrays(1, &sprites);
+	glBindVertexArray(sprites);
+	glBindBuffer(GL_ARRAY_BUFFER, handle);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, ((GLubyte*)NULL + (0)));
+	glEnableVertexAttribArray(0);
+	glBindVertexArray(0);
+	const char* texName = "media/texture/fire.png";
+	Texture::loadTexture(texName);
+	spriteProg.setUniform("SpriteTex", 0);
+    spriteProg.setUniform("Size2", 0.15f);
 }
 
 void SceneBasic_Uniform::compile()
@@ -193,6 +227,10 @@ void SceneBasic_Uniform::compile()
         explosionProg.compileShader("shader/explosion.frag");
         prog.compileShader("shader/particles.vert");
         prog.compileShader("shader/particles.frag");
+		spriteProg.compileShader("shader/sprite.vert");
+        spriteProg.compileShader("shader/sprite.frag");
+        spriteProg.compileShader("shader/sprite.gs");
+
 		GLuint progHandle = prog.getHandle();
 		const char* outputNames[] = { "Position", "Velocity", "Age" };
 		glTransformFeedbackVaryings(progHandle, 3, outputNames, GL_SEPARATE_ATTRIBS);
@@ -205,6 +243,8 @@ void SceneBasic_Uniform::compile()
         printShaderUniforms(explosionProg);
         prog.link();
         printShaderUniforms(prog);
+		spriteProg.link();
+		printShaderUniforms(spriteProg);
         
 	} catch (GLSLProgramException &e) {
 		cerr << e.what() << endl;
@@ -272,10 +312,26 @@ void SceneBasic_Uniform::render()
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     vec3 cameraPos = vec3(7.0f*cos(angle), 2.0f, 7.0f*sin(angle));
+
+    spriteProg.use();
+    model = mat4(1.0f);
+    setMatrices(spriteProg);
+    GLuint spriteTex = Texture::loadTexture("media/texture/fire.png");
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, spriteTex);
+    spriteProg.setUniform("SpriteTex", 0);
+    spriteProg.setUniform("Size2", 0.15f);
+   
+    glBindVertexArray(sprites);
+    glDrawArrays(GL_POINTS, 0, numSprites);
+    glFinish();
+
     skyProg.use();
     model = mat4(1.0f);
     setMatrices(skyProg);
     sky.render();
+
+   
 
     // Render particles
     prog.use();
@@ -304,7 +360,7 @@ void SceneBasic_Uniform::render()
     prog.setUniform("EmitterPos", emitterPos);
 
     // Bind texture
-    GLuint fireTexture = Texture::loadTexture("media/texture/fire.png");
+    GLuint fireTexture = Texture::loadTexture("media/texture/smoke.png");
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fireTexture);
     prog.setUniform("ParticleTex", 0);
@@ -373,6 +429,7 @@ void SceneBasic_Uniform::render()
     modelProg.setUniform("Material.Shininess", 32.0f); // Specular shininess
 
     renderMeteors();
+
 }
 
 void SceneBasic_Uniform::renderMeteors() {

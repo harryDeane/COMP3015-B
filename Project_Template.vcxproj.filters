@@ -110,6 +110,15 @@
     <None Include="shader\particles.vert">
       <Filter>shaders</Filter>
     </None>
+    <None Include="shader\sprite.frag">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shader\sprite.gs">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shader\sprite.vert">
+      <Filter>shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="helper\scene.h">
