@@ -32,6 +32,7 @@ private:
     SkyBox sky;
    std::unique_ptr<ObjMesh> meteor;
    std::unique_ptr<ObjMesh> city;
+  
    float rotSpeed;
     float tPrev;
     float angle;
@@ -41,6 +42,8 @@ private:
     GLuint asteroidColorTex;
     GLuint asteroidNormalTex;
     GLuint cityTexture;
+    GLuint fireTexture;
+   
 
     float meteorYPosition; // Track meteor's Y position
     float fallSpeed;     // Falling speed
@@ -55,9 +58,17 @@ private:
         glm::vec3 rotationAxis;
         float rotationAngle;
         float fallSpeed;
-        bool exploding;         // Track if this meteor is exploding
-        float explosionTime;    // Track explosion progress
-        float explosionSpeed;   // How fast the explosion progresses
+        bool exploding = false;
+        float explosionTime = 0.0f;
+        float explosionSpeed = 0.0f;
+
+        // particle system
+        glm::vec3 emitterPos;
+        glm::vec3 emitterDir;
+        GLuint particlesVAO;
+        GLuint initVelBuffer;
+        GLuint startTimeBuffer;
+        int nParticles = 1000;
     };
 
     std::vector<FallingMeteor> meteors;
@@ -88,6 +99,8 @@ private:
     void initBuffers();
     float randFloat();
     void renderMeteors();
+
+    void initMeteorParticleSystem(FallingMeteor& meteor);
 
     // Static callback functions
     static void mouseCallback(GLFWwindow* window, double xpos, double ypos);
