@@ -47,7 +47,10 @@ private:
     GLuint asteroidNormalTex;
     GLuint cityTexture;
     GLuint fireTexture;
+    GLuint spriteTexture;
    
+    float score = 0.0f; // Player's score
+    float health;
 
     float meteorYPosition; // Track meteor's Y position
     float fallSpeed;     // Falling speed

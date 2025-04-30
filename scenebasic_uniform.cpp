@@ -24,7 +24,7 @@ using std::endl;
 
 
 SceneBasic_Uniform::SceneBasic_Uniform() :
-      tPrev(0), angle(0.0f),drawBuf(1),deltaT(0), rotSpeed(0.0f), sky(100.0f), time(0.01f), plane(50.0f,50.0f,50.0f, 50.0f), meteorYPosition(15.0f), fallSpeed(3.0f), particleLifetime(10.5f), nParticles(1000), emitterPos(1,0,0),emitterDir(-1,2,0){
+      tPrev(0), angle(0.0f),drawBuf(1),deltaT(0), rotSpeed(0.0f), sky(100.0f), time(0.01f), plane(50.0f,50.0f,50.0f, 50.0f), meteorYPosition(15.0f), fallSpeed(6.0f), particleLifetime(10.5f), nParticles(1000), emitterPos(1,0,0),emitterDir(-1,2,0){
       meteor = ObjMesh::load("media/rocknew.obj", false, true);
       city = ObjMesh::load("media/smallcity.obj", false, true);
 
@@ -81,6 +81,7 @@ void SceneBasic_Uniform::checkMeteorClick() {
             meteorInstance.exploding = true;
             meteorInstance.explosionTime = 0.0f;
             meteorInstance.explosionSpeed = 1.0f / explosionDuration;
+            score++;
 
             // Move to exploding list
             explodingMeteors.push_back(meteorInstance);
@@ -159,9 +160,17 @@ void SceneBasic_Uniform::initScene()
 	model = mat4(1.0f);
     glActiveTexture(GL_TEXTURE0);
    
+
+    cameraPos = glm::vec3(0.0f, 2.0f, 5.0f);  // Start slightly above the ground
+    cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);  // Looking forward
+    cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+
+    renderMeteors();
+
     prog.use();
-	
+
     GLuint fireTexture = Texture::loadTexture("media/texture/smoke.png");
+	this->fireTexture = fireTexture;
     glActiveTexture(GL_TEXTURE1);
     ParticleUtils::createRandomTex1D(nParticles * 3);
     glBindTexture(GL_TEXTURE_2D, fireTexture);
@@ -172,14 +181,7 @@ void SceneBasic_Uniform::initScene()
     prog.setUniform("ParticleSize", 1.5f);
     prog.setUniform("Accel", vec3(0.0f, 0.2f, 0.0f));
     prog.setUniform("EmitterPos", emitterPos);
-	prog.setUniform("EmitterBasis", ParticleUtils::makeArbitraryBasis(emitterDir));
-
-    cameraPos = glm::vec3(0.0f, 2.0f, 5.0f);  // Start slightly above the ground
-    cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);  // Looking forward
-    cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
-
-    renderMeteors();
-
+    prog.setUniform("EmitterBasis", ParticleUtils::makeArbitraryBasis(emitterDir));
 
 	spriteProg.use();
     numSprites = 50;
@@ -189,7 +191,7 @@ void SceneBasic_Uniform::initScene()
     for (int i = 0; i < numSprites; i++) {
         vec3 p(
             ((float)std::rand() / RAND_MAX * 20.0f) - 10.0f,  // X: -10 to 10
-            -28.0f,                                             // Y: 0 (ground level)
+            25.0f,                                             // Y: 0 (ground level)
             ((float)std::rand() / RAND_MAX * 20.0f) - 10.0f   // Z: -10 to 10
         );
         locations[i * 3] = p.x;
@@ -208,10 +210,12 @@ void SceneBasic_Uniform::initScene()
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, ((GLubyte*)NULL + (0)));
 	glEnableVertexAttribArray(0);
 	glBindVertexArray(0);
-	const char* texName = "media/texture/fire.png";
-	Texture::loadTexture(texName);
+	spriteTexture = Texture::loadTexture("media/texture/star.png");
 	spriteProg.setUniform("SpriteTex", 0);
     spriteProg.setUniform("Size2", 0.15f);
+
+ 
+
 }
 
 void SceneBasic_Uniform::compile()
@@ -281,6 +285,7 @@ void SceneBasic_Uniform::update(float t)
             spawnNewMeteor();
             meteorInstance = meteors.back();
             meteors.pop_back();
+            health = health - 10.0f;
         }
         meteorInstance.rotationAngle += deltaT * 45.0f; // Rotate 45 degrees per second
     }
@@ -316,9 +321,8 @@ void SceneBasic_Uniform::render()
     spriteProg.use();
     model = mat4(1.0f);
     setMatrices(spriteProg);
-    GLuint spriteTex = Texture::loadTexture("media/texture/fire.png");
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, spriteTex);
+    glBindTexture(GL_TEXTURE_2D, spriteTexture);
     spriteProg.setUniform("SpriteTex", 0);
     spriteProg.setUniform("Size2", 0.15f);
    
@@ -360,7 +364,6 @@ void SceneBasic_Uniform::render()
     prog.setUniform("EmitterPos", emitterPos);
 
     // Bind texture
-    GLuint fireTexture = Texture::loadTexture("media/texture/smoke.png");
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fireTexture);
     prog.setUniform("ParticleTex", 0);
@@ -386,7 +389,7 @@ void SceneBasic_Uniform::render()
     modelProg.setUniform("IsPlane", true); // Indicate that this is the plane
 
     // Bind city texture
-    glActiveTexture(GL_TEXTURE0);
+    glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, cityTexture);
     modelProg.setUniform("cityTexture", 0); // Texture unit 0
 
