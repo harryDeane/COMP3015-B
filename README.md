@@ -116,7 +116,7 @@ Key parameters you can adjust in **scenebasic_uniform.cpp**:
 
 ## Demonstration Video
 
-[Insert link to video demonstration here]
+https://youtu.be/iTD8svUHSG4
 
 ---
 
