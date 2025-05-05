@@ -170,7 +170,7 @@ void SceneBasic_Uniform::initScene()
     prog.use();
 
     GLuint fireTexture = Texture::loadTexture("media/texture/smoke.png");
-	this->fireTexture = fireTexture;
+    this->fireTexture = fireTexture;
     glActiveTexture(GL_TEXTURE1);
     ParticleUtils::createRandomTex1D(nParticles * 3);
     glBindTexture(GL_TEXTURE_2D, fireTexture);
@@ -258,6 +258,11 @@ void SceneBasic_Uniform::compile()
 
 void SceneBasic_Uniform::update(float t)
 {
+    if (gameOver) {
+        glfwSetWindowShouldClose(glfwGetCurrentContext(), GLFW_TRUE);
+        return;
+    }
+
     deltaT = t - tPrev;  // Make sure this is set before rendering
     
 
@@ -281,11 +286,19 @@ void SceneBasic_Uniform::update(float t)
             meteorInstance.position.y -= meteorInstance.fallSpeed * deltaT;
         }
         else {
+            meteorImpacts++;  // Increment impact counter
+            health -= 10.0f;
+
+            // Check for game over condition
+            if (meteorImpacts >= MAX_METEOR_IMPACTS) {
+                gameOver = true;
+                std::cout << "GAME OVER! Too many meteor impacts!" << std::endl;
+                return;
+            }
             // Respawn at top when hitting ground
             spawnNewMeteor();
             meteorInstance = meteors.back();
             meteors.pop_back();
-            health = health - 10.0f;
         }
         meteorInstance.rotationAngle += deltaT * 45.0f; // Rotate 45 degrees per second
     }
@@ -314,6 +327,10 @@ void SceneBasic_Uniform::update(float t)
 
 void SceneBasic_Uniform::render()
 {
+    if (gameOver) {
+        return;  // Don't render if game is over
+    }
+
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     vec3 cameraPos = vec3(7.0f*cos(angle), 2.0f, 7.0f*sin(angle));

@@ -48,9 +48,12 @@ private:
     GLuint cityTexture;
     GLuint fireTexture;
     GLuint spriteTexture;
-   
+
     float score = 0.0f; // Player's score
     float health;
+    const int MAX_METEOR_IMPACTS = 5;
+    int meteorImpacts = 0;
+    bool gameOver = false;
 
     float meteorYPosition; // Track meteor's Y position
     float fallSpeed;     // Falling speed
