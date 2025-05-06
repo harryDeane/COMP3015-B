@@ -68,7 +68,7 @@ This project is an interactive 3D scene built using OpenGL and GLSL, featuring a
 ### Setup:
 
 ```bash
-git clone [repository-url]
+git clone --recursive https://github.com/harryDeane/COMP3015-B
 cd meteor-shower-opengl
 Ensure all assets are in the media folder
 Open solution in Visual Studio and build
